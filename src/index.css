@@ -1,0 +1,23 @@
+.excels,
+.folders {
+  display: grid;
+  gap: 1px;
+
+  >* {
+    outline: 1px solid #ccc;
+    padding: 2px 8px;
+  }
+}
+
+.excels {
+  grid-template-columns: max-content auto;
+}
+
+.folders {
+  grid-template-columns: max-content auto;
+}
+
+.excel-name,
+.folder-name {
+  /*  */
+}

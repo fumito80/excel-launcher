@@ -1,9 +1,0 @@
-{
-  "name": "excel-switcher",
-  "version": "1.0",
-  "manifest_version": 3,
-  "permissions": ["nativeMessaging"],
-  "action": {
-    "default_popup": "popup.html"
-  }
-}
