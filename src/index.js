@@ -7,36 +7,35 @@ function createElement(tagName, { ...props } = {}) {
 	return Object.assign(document.createElement(tagName), { ...props });
 }
 
-function setList(json = {}) {
-	json.excel?.forEach((book) => {
-		const href = book.path.replace("\\\\", "\\");
+function makeItemRow($parent) {
+	return (item) => {
+		const href = item.path.replace("\\\\", "\\");
 		const $name = createElement("a", {
-			textContent: book.name,
+			textContent: item.name,
 			className: "excel-name",
 			href,
 		});
+		$name.setAttribute("data-hwnd", item.hwnd);
 		const $path = createElement("div", {
-			textContent: href.replace(book.name, "").replace(/\\$/, ""),
+			textContent: href.replace(item.name, "").replace(/\\$/, ""),
 			className: "excel-path",
 		});
-		$excels.append($name, $path);
-	});
-	json.folders?.forEach((folder) => {
-		const href = folder.path.replace("\\\\", "\\");
-		const $name = createElement("a", {
-			textContent: folder.name,
-			className: "folder-name",
-			href,
-		});
-		const $path = createElement("div", {
-			textContent: href.replace(folder.name, "").replace(/\\$/, ""),
-			className: "folder-path",
-		});
-		$folders.append($name, $path);
-	});
+		$parent.append($name, $path);
+	};
 }
 
-fetch(`${uri}/get-list`)
+function sortRegular(a, b) {
+	return a.path === b.path
+		? -a.name.localeCompare(b.name)
+		: -a.path.localeCompare(b.path);
+}
+
+function setList(json = {}) {
+	json.excels?.toSorted(sortRegular).forEach(makeItemRow($excels));
+	json.folders?.toSorted(sortRegular).forEach(makeItemRow($folders));
+}
+
+fetch(`${uri}/list`)
 	.then((res) => {
 		if (!res.ok) {
 			throw new Error("サーバーエラー");
@@ -44,3 +43,14 @@ fetch(`${uri}/get-list`)
 		return res.json();
 	})
 	.then(setList);
+
+document.addEventListener("click", (e) => {
+	if (!(e.target instanceof HTMLAnchorElement)) {
+		return;
+	}
+	fetch(`${uri}/activate/${e.target.dataset.hwnd}`);
+});
+
+// window.addEventListener("focus", () => {
+// 	window.location.reload();
+// });

@@ -4,7 +4,7 @@
   gap: 1px;
 
   >* {
-    outline: 1px solid #ccc;
+    outline: 1px solid #999;
     padding: 2px 8px;
   }
 }
@@ -15,9 +15,4 @@
 
 .folders {
   grid-template-columns: max-content auto;
-}
-
-.excel-name,
-.folder-name {
-  /*  */
 }

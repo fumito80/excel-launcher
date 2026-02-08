@@ -1,20 +1,15 @@
-# excel-switcher.ps1
+# Excel & Folder Monitoring Server (PowerShell)
+$port = 8080
+$listener = New-Object System.Net.HttpListener
+$listener.Prefixes.Add("http://localhost:$port/")
 
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 
-public class WinAPI2 {
-  [DllImport("user32.dll")]
-  public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
-
-  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-
+public class WinAPI {
   [DllImport("user32.dll")]
   public static extern bool IsWindowVisible(IntPtr hWnd);
-
-  [DllImport("user32.dll")]
-  public static extern bool SetForegroundWindow(IntPtr hWnd);
 
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
   public static extern bool EnumDesktopWindows(IntPtr hDesktop, EnumDelegate lpEnumCallbackFunction, IntPtr lParam);
@@ -24,100 +19,109 @@ public class WinAPI2 {
   public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder strText, int maxCount);
 
   [DllImport("user32.dll")]
-  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+  public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+  [DllImport("user32.dll")]
+  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+  [DllImport("user32.dll")]
+  public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
 }
 "@
 
-function SetForegroundWindow {
-  SetForegroundWindow Application.ActiveWindow.Hwnd
-}
-
-function Get-List($response) {
-  # 1. Get Excel Data
-  $excelData = @()
-  try {
-    $excel = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
-    if ($excel) {
-      foreach ($wb in $excel.Workbooks) {
-        $excelData += @{
-          name       = $wb.Name
-          path       = $wb.FullName
-          isSaved    = $wb.Saved
-          sheetCount = $wb.Sheets.Count
-          hwnd       = $wb.Windows(1).Hwnd
+class MyClass {
+  static [string] GetList() {
+    $win32 = "WinAPI" -as [type]
+    # 1. Get Excel Data
+    $excelData = @()
+    try {
+      $excel = [Runtime.InteropServices.Marshal]::GetActiveObject("Excel.Application")
+      if ($excel) {
+        foreach ($wb in $excel.Workbooks) {
+          $excelData += @{
+            name       = $wb.Name
+            path       = $wb.FullName
+            isSaved    = $wb.Saved
+            sheetCount = $wb.Sheets.Count
+            hwnd       = $wb.Windows(1).Hwnd
+          }
         }
-      }
-      if ($excel.ProtectedViewWindows.Count -gt 0) {
-        $windows = New-Object System.Collections.Generic.List[IntPtr]
-        $enumCallback = [Win32.Win32Utils+EnumDelegate] {
-          param($hWnd, $lParam)
-          $windows.Add($hWnd)
-          return $true
-        }
-        [Win32.Win32Utils]::EnumDesktopWindows([IntPtr]::Zero, $enumCallback, [IntPtr]::Zero)
-        Write-Host "AAA"
+        if ($excel.ProtectedViewWindows.Count -gt 0) {
+          $windows = New-Object System.Collections.Generic.List[IntPtr]
+          $callback = {
+            param([IntPtr]$hWnd, [int]$lParam)
+            if ($win32::IsWindowVisible($hWnd)) {
+              $sb = New-Object System.Text.StringBuilder 256
+              $win32::GetWindowText($hWnd, $sb, $sb.Capacity)
+              $title = $sb.ToString()
+              if (-not [string]::IsNullOrWhiteSpace($title)) {
+                $windows.Add($hWnd)
+                # Write-Host "HWND: $hWnd - Title: $title"
+              }
+            }
+            return $true
+          }
+          $win32::EnumDesktopWindows([IntPtr]::Zero, $callback, [IntPtr]::Zero)
 
-        foreach ($wb in $excel.ProtectedViewWindows) {
-          $hwnd = null
-          foreach ($hwnd1 in $windows) {
-            $sb = New-Object System.Text.StringBuilder 256
-            [Win32.Win32Utils]::GetWindowText($hwnd1, $sb, $sb.Capacity)
-            $title = $sb.ToString()
-            # タイトルが一致するハンドルを特定（部分一致が安全）
-            if ($title.StartsWith($wb.Caption.Replace(".xlsx", ""))) {
-              Write-Host "Found HWND: $hwnd1 | Title: $title"
-              # $hwnd を使ってやりたい処理をここに書く
-              $hwnd = $hwnd1
-              break
+          foreach ($wb in $excel.ProtectedViewWindows) {
+            $hwnd = $null
+            foreach ($hwnd1 in $windows) {
+              $sb = New-Object System.Text.StringBuilder 256
+              $win32::GetWindowText($hwnd1, $sb, $sb.Capacity)
+              $title = $sb.ToString()
+              if ($title.StartsWith($wb.Caption.Replace(".xlsx", ""))) {
+                # Write-Host "Found HWND: $hwnd1 | Title: $title"
+                $hwnd = $hwnd1
+                break
+              }
+            }
+            $excelData += @{
+              name       = $wb.SourceName
+              path       = $wb.SourcePath
+              isSaved    = $false
+              sheetCount = - 1
+              hwnd       = $hwnd
             }
           }
-          # Write-Host $process.MainWindowHandle
-          $excelData += @{
-            name       = $wb.SourceName
-            path       = $wb.SourcePath
-            isSaved    = $false
-            sheetCount = -1
-            hwnd       = $hwnd
-          }
         }
       }
     }
-  }
-  catch {}
+    catch {
+      Write-Host $_
+    }
 
-  # 2. Get Open Folders (Explorer)
-  $folderData = @()
-  try {
-    $shell = New-Object -ComObject Shell.Application
-    foreach ($window in $shell.Windows()) {
-      # Filter for file system windows (not Internet Explorer)
-      if ($window.LocationURL -like "file://*") {
-        try {
-          $path = ([uri]$window.LocationURL).LocalPath
-          $folderData += @{
-            name = $window.LocationName
-            path = $path
+    # 2. Get Open Folders (Explorer)
+    $folderData = @()
+    try {
+      $shell = New-Object -ComObject Shell.Application
+      foreach ($window in $shell.Windows()) {
+        # Filter for file system windows (not Internet Explorer)
+        if ($window.LocationURL -like "file://*") {
+          try {
+            $path = ([uri]$window.LocationURL).LocalPath
+            $folderData += @{
+              name = $window.LocationName
+              path = $path
+              hwnd = $window.Hwnd
+            }
           }
+          catch {}
         }
-        catch {}
       }
     }
-  }
-  catch {}
+    catch {
+      Write-Host $_
+    }
 
-  $result = @{
-    excel   = $excelData
-    folders = $folderData
-  }
+    $result = @{
+      excels  = $excelData
+      folders = $folderData
+    }
 
-  $json = $result | ConvertTo-Json -Compress
-  [System.Text.Encoding]::UTF8.GetBytes($json)
+    $json = $result | ConvertTo-Json -Compress
+    return $json
+  }
 }
-
-# Excel & Folder Monitoring Server (PowerShell)
-$port = 8080
-$listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://localhost:$port/")
 
 try {
   $listener.Start()
@@ -152,14 +156,18 @@ try {
       $localPath = Join-Path (Get-Location) $path
 
       if ($path -eq "/list") {
-        $buffer = Get-List($response)
+        $json = [MyClass]::GetList()
         $response.ContentType = "application/json; charset=utf-8"
-        $response.ContentLength64 = $buffer.Length
-        $response.OutputStream.Write($buffer, 0, $buffer.Length)
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $response.ContentLength64 = $bytes.Length
+        $response.OutputStream.Write($bytes, 0, $bytes.Length)
       }
-      elseif ($path -eq "/activate") {
-        [WinAPI2]::SetForegroundWindow([IntPtr]$data.hwnd) | Out-Null
-        Send-Response @{ status = "ok" }
+      elseif ($path.StartsWith("/activate/")) {
+        $hwnd = [int]$path.Substring(10)
+        [WinAPI]::ShowWindow($hwnd, 9) | Out-Null  # SW_RESTORE
+        [WinAPI]::keybd_event(0, 0, 0, 0) | Out-Null
+        [WinAPI]::SetForegroundWindow($hwnd) | Out-Null
+        [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
       }
       elseif (Test-Path $localPath) {
         $content = [System.IO.File]::ReadAllBytes($localPath)
