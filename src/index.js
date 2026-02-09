@@ -31,15 +31,18 @@ function makeItemRow($parent, activates) {
 		}
 		const dtSerial = activates[fullPath] ?? "";
 		let textContent = "";
+		let title = "";
 		if (dtSerial) {
 			const dt = new Date(dtSerial);
 			textContent =
 				dt.toLocaleDateString() === new Date().toLocaleDateString()
 					? dt.toLocaleTimeString()
 					: dt.toLocaleDateString();
+			title = dt.toLocaleString();
 		}
 		const $activate = createElement("div", {
 			textContent,
+			title,
 			className: "activate",
 		});
 		$activate.setAttribute("data-dt", dtSerial);
@@ -101,6 +104,7 @@ document.addEventListener("click", (e) => {
 			const $activate = e.target.nextElementSibling.nextElementSibling;
 			$activate.setAttribute("data-dt", dt);
 			$activate.textContent = new Date(dt).toLocaleTimeString();
+			$activate.title = new Date(dt).toLocaleString();
 			sort($excels);
 		}
 	}
