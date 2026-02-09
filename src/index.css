@@ -10,9 +10,13 @@
 }
 
 .excels {
-  grid-template-columns: max-content auto;
+  grid-template-columns: max-content auto max-content;
 }
 
 .folders {
   grid-template-columns: max-content auto;
+}
+
+.activate {
+  text-align: end;
 }

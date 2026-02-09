@@ -29,6 +29,43 @@ public class WinAPI {
 }
 "@
 
+function FocusWindow {
+  param (
+    $hwnd
+  )  
+  [WinAPI]::ShowWindow($hwnd, 9) | Out-Null  # SW_RESTORE
+  [WinAPI]::keybd_event(0, 0, 0, 0) | Out-Null
+  [WinAPI]::SetForegroundWindow($hwnd) | Out-Null
+  [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
+}
+function OpenOrFocusParentFolder {
+  param (
+    $TargetFilePath
+  )
+  $targetPath = Split-Path -Path $TargetFilePath -Parent
+  $shell = New-Object -ComObject Shell.Application
+  $openFolders = $shell.Windows() | ForEach-Object {
+    try {
+      $url = $_.LocationURL
+      if ($url) {
+        [PSCustomObject]@{
+          LocationURL = [System.Uri]::UnescapeDataString($url).Replace("file:///", "").Replace("/", "\").TrimEnd('\')
+          Hwnd        = $_.Hwnd
+        }
+      }
+    }
+    catch { $null }
+  }
+
+  foreach ($window in $openFolders) {
+    if ($window.LocationURL -eq $targetPath) {
+      FocusWindow($window.hWnd)
+      return
+    }
+  }
+  Invoke-Item $targetPath
+}
+
 class MyClass {
   static [string] GetList() {
     $win32 = "WinAPI" -as [type]
@@ -40,7 +77,7 @@ class MyClass {
         foreach ($wb in $excel.Workbooks) {
           $excelData += @{
             name       = $wb.Name
-            path       = $wb.FullName
+            path       = Split-Path -Path $wb.FullName -Parent
             isSaved    = $wb.Saved
             sheetCount = $wb.Sheets.Count
             hwnd       = $wb.Windows(1).Hwnd
@@ -162,12 +199,13 @@ try {
         $response.ContentLength64 = $bytes.Length
         $response.OutputStream.Write($bytes, 0, $bytes.Length)
       }
-      elseif ($path.StartsWith("/activate/")) {
-        $hwnd = [int]$path.Substring(10)
-        [WinAPI]::ShowWindow($hwnd, 9) | Out-Null  # SW_RESTORE
-        [WinAPI]::keybd_event(0, 0, 0, 0) | Out-Null
-        [WinAPI]::SetForegroundWindow($hwnd) | Out-Null
-        [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
+      elseif ($path.StartsWith("/activate-hwnd/")) {
+        $hwnd = [int]$path.Substring(15)
+        FocusWindow($hwnd)
+      }
+      elseif ($path.StartsWith("/activate-path/")) {
+        $path = $path.Substring(15)
+        OpenOrFocusParentFolder($path)
       }
       elseif (Test-Path $localPath) {
         $content = [System.IO.File]::ReadAllBytes($localPath)
