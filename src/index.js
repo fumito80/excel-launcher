@@ -2,6 +2,7 @@ const uriBase = "http://localhost:8080";
 
 const [$excels] = document.getElementsByClassName("excels");
 const [$folders] = document.getElementsByClassName("folders");
+const [$past] = document.getElementsByClassName("past");
 
 function createElement(tagName, { ...props } = {}) {
 	return Object.assign(document.createElement(tagName), { ...props });
@@ -17,13 +18,14 @@ function makeItemRow($parent, activates) {
 		$name.setAttribute("data-hwnd", item.hwnd);
 		const fullPath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
 		$name.setAttribute("data-path", fullPath);
-		const [, path, parentFolder] = /^(.*\\)(.*)$/.exec(item.path);
+		const [, path, parentFolder] = /^(.*\\)(.*)$/.exec(item.path) ?? ["", ""];
 		const $path = createElement("div", { textContent: path });
 		const $parentFolder = createElement("a", {
 			textContent: parentFolder,
 			href: "javascript:void(0)",
 			className: "excel-folder",
 		});
+		$parentFolder.setAttribute("data-path", item.path);
 		$path.append($parentFolder);
 		if (!activates) {
 			$parent.append($name, $path);
@@ -69,11 +71,74 @@ function sortRegular(a, b) {
 		: -a.path.localeCompare(b.path);
 }
 
-function setList(json = {}) {
+function setList(responseJson = {}) {
 	const activates = JSON.parse(localStorage.getItem("activates") || "{}");
-	json.excels?.forEach(makeItemRow($excels, activates));
+	responseJson.excels?.toSorted(sortRegular).forEach(makeItemRow($excels, activates));
 	sort($excels);
-	json.folders?.toSorted(sortRegular).forEach(makeItemRow($folders));
+	responseJson.folders?.toSorted(sortRegular).forEach(makeItemRow($folders));
+	return { activates, responseJson };
+}
+
+function setPast({ activates, responseJson }) {
+	Object.keys(activates)
+		.filter(
+			(excelPath) =>
+				!responseJson.excels.find((item) => {
+					const fullPath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
+					return fullPath === excelPath;
+				}),
+		)
+		.map((excelPath) => {
+			const [, path, name] = /^(.*)\\(.*)$/.exec(excelPath);
+			return { name, path };
+		})
+		.forEach(makeItemRow($past, activates));
+	sort($past);
+}
+
+function clickItem($target) {
+	if (!($target instanceof HTMLAnchorElement)) {
+		return;
+	}
+	const isPastItem = $target.closest(".past");
+	const isExcelItem = $target.classList.contains("excel-name");
+	const { hwnd = "", path } = $target.dataset;
+	const uri = `${uriBase}/activate?hwnd=${hwnd}&path=${encodeURIComponent(path)}`;
+	if (isExcelItem) {
+		const activates = JSON.parse(localStorage.getItem("activates") || "{}");
+		const dt = Date.now();
+		localStorage.setItem(
+			"activates",
+			JSON.stringify({ ...activates, [$target.dataset.path]: dt }),
+		);
+		const $activate = $target.nextElementSibling.nextElementSibling;
+		$activate.setAttribute("data-dt", dt);
+		$activate.textContent = new Date(dt).toLocaleTimeString();
+		$activate.title = new Date(dt).toLocaleString();
+		if (!isPastItem) {
+			sort($excels);
+		}
+	}
+	fetch(uri)
+		.then((res) => {
+			if (!res.ok) {
+				throw new Error("サーバーエラー");
+			}
+			return res.json();
+		})
+		.then((json) => {
+			const hwnd = json?.hwnd;
+			$target.setAttribute("data-hwnd", hwnd === -1 ? "" : hwnd);
+			if (isPastItem && isExcelItem) {
+				const rowItems = [
+					$target,
+					$target.nextElementSibling,
+					$target.nextElementSibling.nextElementSibling,
+				];
+				$excels.prepend(...rowItems);
+			}
+		})
+		.catch(() => {});
 }
 
 fetch(`${uriBase}/list`)
@@ -83,34 +148,7 @@ fetch(`${uriBase}/list`)
 		}
 		return res.json();
 	})
-	.then(setList);
+	.then(setList)
+	.then(setPast);
 
-document.addEventListener("click", (e) => {
-	if (!(e.target instanceof HTMLAnchorElement)) {
-		return;
-	}
-	let uri;
-	if (e.target.classList.contains("excel-folder")) {
-		uri = `${uriBase}/activate-path/${e.target.parentElement.previousElementSibling.dataset.path}`;
-	} else {
-		uri = `${uriBase}/activate-hwnd/${e.target.dataset.hwnd}`;
-		if (e.target.classList.contains("excel-name")) {
-			const activates = JSON.parse(localStorage.getItem("activates") || "{}");
-			const dt = Date.now();
-			localStorage.setItem(
-				"activates",
-				JSON.stringify({ ...activates, [e.target.dataset.path]: dt }),
-			);
-			const $activate = e.target.nextElementSibling.nextElementSibling;
-			$activate.setAttribute("data-dt", dt);
-			$activate.textContent = new Date(dt).toLocaleTimeString();
-			$activate.title = new Date(dt).toLocaleString();
-			sort($excels);
-		}
-	}
-	fetch(uri);
-});
-
-// window.addEventListener("focus", () => {
-// 	window.location.reload();
-// });
+document.addEventListener("click", (e) => clickItem(e.target));

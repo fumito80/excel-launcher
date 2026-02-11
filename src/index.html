@@ -1,11 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="index.js" defer></script>
-    <link rel="stylesheet" href="index.css">
+    <style>
+        .excels,
+        .folders,
+        .past {
+            display: grid;
+            gap: 1px;
+
+            >* {
+                outline: 1px solid #999;
+                padding: 2px 8px;
+            }
+        }
+
+        .excels,
+        .past {
+            grid-template-columns: max-content auto max-content;
+        }
+
+        .folders {
+            grid-template-columns: max-content auto;
+        }
+
+        .activate {
+            text-align: end;
+        }
+
+        .past-separator {
+            margin-top: 30px;
+        }
+    </style>
     <title>Excel Switcher</title>
 </head>
 
@@ -14,6 +43,9 @@
     <div class="excels"></div>
     <h3>Folder</h3>
     <div class="folders"></div>
+    <hr class="past-separator">
+    <h3>[Recently Opened]</h3>
+    <div class="past"></div>
 </body>
 
 </html>

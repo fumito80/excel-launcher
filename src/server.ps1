@@ -26,6 +26,10 @@ public class WinAPI {
 
   [DllImport("user32.dll")]
   public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+
+  [DllImport("user32.dll")]
+  [return: MarshalAs(UnmanagedType.Bool)]
+  public static extern bool IsWindow(IntPtr hWnd);
 }
 "@
 
@@ -38,37 +42,34 @@ function FocusWindow {
   [WinAPI]::SetForegroundWindow($hwnd) | Out-Null
   [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
 }
-function OpenOrFocusParentFolder {
-  param (
-    $TargetFilePath
-  )
-  $targetPath = Split-Path -Path $TargetFilePath -Parent
-  $shell = New-Object -ComObject Shell.Application
-  $openFolders = $shell.Windows() | ForEach-Object {
-    try {
-      $url = $_.LocationURL
-      if ($url) {
-        [PSCustomObject]@{
-          LocationURL = [System.Uri]::UnescapeDataString($url).Replace("file:///", "").Replace("/", "\").TrimEnd('\')
-          Hwnd        = $_.Hwnd
-        }
-      }
-    }
-    catch { $null }
-  }
-
-  foreach ($window in $openFolders) {
-    if ($window.LocationURL -eq $targetPath) {
-      FocusWindow($window.hWnd)
-      return
-    }
-  }
-  Invoke-Item $targetPath
-}
 
 class MyClass {
-  static [string] GetList() {
-    $win32 = "WinAPI" -as [type]
+
+  static [int] OpenOrFocus([string]$targetPath) {
+    $openFolders = [MyClass]::GetFolders()
+    foreach ($folder in $openFolders) {
+      if ($folder.path -eq $targetPath) {
+        FocusWindow($folder.hWnd)
+        return $folder.hWnd
+      }
+    }
+    $excels = [MyClass]::GetExcels()
+    foreach ($excel in $excels) {
+      if ($excel.path -eq "") {
+        continue
+      }
+      $excelPath = Join-Path -Path $excel.path -ChildPath $excel.name
+      if ($excelPath -eq $targetPath) {
+        FocusWindow($excel.hWnd)
+        return $excel.hWnd
+      }
+    }
+    Invoke-Item -LiteralPath $targetPath
+    return -1
+  }
+
+  static [object] GetExcels() {
+    $WinAPI = "WinAPI" -as [type]
     # 1. Get Excel Data
     $excelData = @()
     try {
@@ -76,7 +77,7 @@ class MyClass {
       if ($excel) {
         foreach ($wb in $excel.Workbooks) {
           $excelData += @{
-            name       = $wb.Name
+            name       = Split-Path -Path $wb.FullName -Leaf
             path       = Split-Path -Path $wb.FullName -Parent
             isSaved    = $wb.Saved
             sheetCount = $wb.Sheets.Count
@@ -87,9 +88,9 @@ class MyClass {
           $windows = New-Object System.Collections.Generic.List[IntPtr]
           $callback = {
             param([IntPtr]$hWnd, [int]$lParam)
-            if ($win32::IsWindowVisible($hWnd)) {
+            if ($WinAPI::IsWindowVisible($hWnd)) {
               $sb = New-Object System.Text.StringBuilder 256
-              $win32::GetWindowText($hWnd, $sb, $sb.Capacity)
+              $WinAPI::GetWindowText($hWnd, $sb, $sb.Capacity)
               $title = $sb.ToString()
               if (-not [string]::IsNullOrWhiteSpace($title)) {
                 $windows.Add($hWnd)
@@ -98,13 +99,13 @@ class MyClass {
             }
             return $true
           }
-          $win32::EnumDesktopWindows([IntPtr]::Zero, $callback, [IntPtr]::Zero)
+          $WinAPI::EnumDesktopWindows([IntPtr]::Zero, $callback, [IntPtr]::Zero)
 
           foreach ($wb in $excel.ProtectedViewWindows) {
             $hwnd = $null
             foreach ($hwnd1 in $windows) {
               $sb = New-Object System.Text.StringBuilder 256
-              $win32::GetWindowText($hwnd1, $sb, $sb.Capacity)
+              $WinAPI::GetWindowText($hwnd1, $sb, $sb.Capacity)
               $title = $sb.ToString()
               if ($title.StartsWith($wb.Caption.Replace(".xlsx", ""))) {
                 # Write-Host "Found HWND: $hwnd1 | Title: $title"
@@ -126,7 +127,10 @@ class MyClass {
     catch {
       Write-Host $_
     }
+    return $excelData
+  }
 
+  static [object] GetFolders() {
     # 2. Get Open Folders (Explorer)
     $folderData = @()
     try {
@@ -149,14 +153,7 @@ class MyClass {
     catch {
       Write-Host $_
     }
-
-    $result = @{
-      excels  = $excelData
-      folders = $folderData
-    }
-
-    $json = $result | ConvertTo-Json -Compress
-    return $json
+    return $folderData
   }
 }
 
@@ -167,53 +164,72 @@ try {
   Write-Host "Press Ctrl+C to stop."
 
   while ($listener.IsListening) {
-    $contextAsync = $listener.BeginGetContext($null, $null)
-    while (-not $contextAsync.IsCompleted) {
+    $task = $listener.GetContextAsync()
+    while (-not $task.IsCompleted) {
       Start-Sleep -Milliseconds 100
+      # Break Ctrl+C
       if (-not $listener.IsListening) { break }
     }
+    if (-not $listener.IsListening) { break }
 
-    if ($contextAsync.IsCompleted) {
-      $context = $listener.EndGetContext($contextAsync)
-      $request = $context.Request
-      $response = $context.Response
+    $context = $task.Result
+    $request = $context.Request
+    $response = $context.Response
 
-      $response.Headers.Add("Access-Control-Allow-Origin", "*")
-      $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS")
-      $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+    $response.Headers.Add("Access-Control-Allow-Origin", "*")
+    $response.Headers.Add("Access-Control-Allow-Methods", "GET, OPTIONS")
+    $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
 
-      if ($request.HttpMethod -eq "OPTIONS") {
-        $response.StatusCode = 200
-        $response.Close()
-        continue
+    if ($request.HttpMethod -eq "OPTIONS") {
+      $response.StatusCode = 200
+      $response.Close()
+      continue
+    }
+
+    $path = $request.Url.LocalPath
+    if ($path -eq "/") { $path = "/index.html" }
+    $localPath = Join-Path (Get-Location) $path
+
+    if ($path -eq "/list") {
+      $excelData = [MyClass]::GetExcels()
+      $folderData = [MyClass]::GetFolders()
+      $result = @{
+        excels  = $excelData
+        folders = $folderData
       }
-
-      $path = $context.Request.Url.LocalPath
-      if ($path -eq "/") { $path = "/index.html" }
-      $localPath = Join-Path (Get-Location) $path
-
-      if ($path -eq "/list") {
-        $json = [MyClass]::GetList()
+      $json = $result | ConvertTo-Json -Compress
+      $response.ContentType = "application/json; charset=utf-8"
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+      $response.ContentLength64 = $bytes.Length
+      $response.OutputStream.Write($bytes, 0, $bytes.Length)
+    }
+    elseif ($path -eq "/activate") {
+      $hwnd = 0
+      $success = [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd)
+      if ($success -and [WinApi]::IsWindow($hwnd)) {
+        FocusWindow($hwnd)
+      }
+      elseif (-not [string]::IsNullOrWhiteSpace($request.QueryString["path"])) {
+        $queryStringRaw = $request.RawUrl.Split("?")[1]
+        Add-Type -AssemblyName System.Web
+        $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
+        $path = $decodedParams["path"]
+        $result = @{
+          hwnd = [MyClass]::OpenOrFocus($path)
+        }
+        $json = $result | ConvertTo-Json -Compress
         $response.ContentType = "application/json; charset=utf-8"
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $response.ContentLength64 = $bytes.Length
         $response.OutputStream.Write($bytes, 0, $bytes.Length)
       }
-      elseif ($path.StartsWith("/activate-hwnd/")) {
-        $hwnd = [int]$path.Substring(15)
-        FocusWindow($hwnd)
-      }
-      elseif ($path.StartsWith("/activate-path/")) {
-        $path = $path.Substring(15)
-        OpenOrFocusParentFolder($path)
-      }
-      elseif (Test-Path $localPath) {
-        $content = [System.IO.File]::ReadAllBytes($localPath)
-        $response.ContentLength64 = $content.Length
-        $response.OutputStream.Write($content, 0, $content.Length)
-      }
-      $response.Close()
     }
+    elseif (Test-Path $localPath) {
+      $content = [System.IO.File]::ReadAllBytes($localPath)
+      $response.ContentLength64 = $content.Length
+      $response.OutputStream.Write($content, 0, $content.Length)
+    }
+    $response.Close()
   }
 }
 catch {
