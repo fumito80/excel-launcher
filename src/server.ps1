@@ -193,6 +193,14 @@ class MyClass {
       success = $true
     }
   }
+
+  static [void] OutputJson($response, $result) {
+    $json = $result | ConvertTo-Json -Compress
+    $response.ContentType = "application/json; charset=utf-8"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $response.ContentLength64 = $bytes.Length
+    $response.OutputStream.Write($bytes, 0, $bytes.Length)
+  }
 }
 
 try {
@@ -235,11 +243,7 @@ try {
         excels  = $excelData
         folders = $folderData
       }
-      $json = $result | ConvertTo-Json -Compress
-      $response.ContentType = "application/json; charset=utf-8"
-      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-      $response.ContentLength64 = $bytes.Length
-      $response.OutputStream.Write($bytes, 0, $bytes.Length)
+      [MyClass]::OutputJson($response, $result)
     }
     elseif ($path -eq "/activate") {
       $hwnd = 0
@@ -249,11 +253,7 @@ try {
       $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
       $path = $decodedParams["path"]
       $result = [MyClass]::OpenOrFocus($hwnd, $path)
-      $json = $result | ConvertTo-Json -Compress
-      $response.ContentType = "application/json; charset=utf-8"
-      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-      $response.ContentLength64 = $bytes.Length
-      $response.OutputStream.Write($bytes, 0, $bytes.Length)
+      [MyClass]::OutputJson($response, $result)
     }
     elseif (Test-Path -LiteralPath $localPath) {
       $content = [System.IO.File]::ReadAllBytes($localPath)
