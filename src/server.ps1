@@ -45,29 +45,6 @@ function FocusWindow {
 
 class MyClass {
 
-  static [int] OpenOrFocus([string]$targetPath) {
-    $openFolders = [MyClass]::GetFolders()
-    foreach ($folder in $openFolders) {
-      if ($folder.path -eq $targetPath) {
-        FocusWindow($folder.hWnd)
-        return $folder.hWnd
-      }
-    }
-    $excels = [MyClass]::GetExcels()
-    foreach ($excel in $excels) {
-      if ($excel.path -eq "") {
-        continue
-      }
-      $excelPath = Join-Path -Path $excel.path -ChildPath $excel.name
-      if ($excelPath -eq $targetPath) {
-        FocusWindow($excel.hWnd)
-        return $excel.hWnd
-      }
-    }
-    Invoke-Item -LiteralPath $targetPath
-    return -1
-  }
-
   static [object] GetExcels() {
     $WinAPI = "WinAPI" -as [type]
     # 1. Get Excel Data
@@ -94,7 +71,6 @@ class MyClass {
               $title = $sb.ToString()
               if (-not [string]::IsNullOrWhiteSpace($title)) {
                 $windows.Add($hWnd)
-                # Write-Host "HWND: $hWnd - Title: $title"
               }
             }
             return $true
@@ -108,7 +84,6 @@ class MyClass {
               $WinAPI::GetWindowText($hwnd1, $sb, $sb.Capacity)
               $title = $sb.ToString()
               if ($title.StartsWith($wb.Caption.Replace(".xlsx", ""))) {
-                # Write-Host "Found HWND: $hwnd1 | Title: $title"
                 $hwnd = $hwnd1
                 break
               }
@@ -142,7 +117,7 @@ class MyClass {
             $path = ([uri]$window.LocationURL).LocalPath
             $folderData += @{
               name = $window.LocationName
-              path = $path
+              path = Split-Path -Path $path -Parent
               hwnd = $window.Hwnd
             }
           }
@@ -154,6 +129,50 @@ class MyClass {
       Write-Host $_
     }
     return $folderData
+  }
+
+  static [object] OpenOrFocus([int]$hwnd, [string]$targetPath) {
+    $WinAPI = "WinAPI" -as [type]
+    if ($hwnd -gt 0 -and $WinApi::IsWindow($hwnd)) {
+      FocusWindow($hwnd)
+      return @{
+        success = $true
+        hwnd    = $hwnd
+      }
+    }
+    if (-not (Test-Path -LiteralPath $targetPath)) {
+      return @{
+        success = $false
+      }
+    }
+    $openFolders = [MyClass]::GetFolders()
+    foreach ($folder in $openFolders) {
+      if ($folder.path -eq $targetPath) {
+        FocusWindow($folder.hWnd)
+        return @{
+          success = $true
+          hwnd    = $folder.hWnd
+        }
+      }
+    }
+    $excels = [MyClass]::GetExcels()
+    foreach ($excel in $excels) {
+      if ($excel.path -eq "") {
+        continue
+      }
+      $excelPath = Join-Path -Path $excel.path -ChildPath $excel.name
+      if ($excelPath -eq $targetPath) {
+        FocusWindow($excel.hWnd)
+        return @{
+          success = $true
+          hwnd    = $excel.hWnd
+        }
+      }
+    }
+    Invoke-Item -LiteralPath $targetPath
+    return @{
+      success = $true
+    }
   }
 }
 
@@ -205,26 +224,19 @@ try {
     }
     elseif ($path -eq "/activate") {
       $hwnd = 0
-      $success = [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd)
-      if ($success -and [WinApi]::IsWindow($hwnd)) {
-        FocusWindow($hwnd)
-      }
-      elseif (-not [string]::IsNullOrWhiteSpace($request.QueryString["path"])) {
-        $queryStringRaw = $request.RawUrl.Split("?")[1]
-        Add-Type -AssemblyName System.Web
-        $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
-        $path = $decodedParams["path"]
-        $result = @{
-          hwnd = [MyClass]::OpenOrFocus($path)
-        }
-        $json = $result | ConvertTo-Json -Compress
-        $response.ContentType = "application/json; charset=utf-8"
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-        $response.ContentLength64 = $bytes.Length
-        $response.OutputStream.Write($bytes, 0, $bytes.Length)
-      }
+      [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd)
+      $queryStringRaw = $request.RawUrl.Split("?")[1]
+      Add-Type -AssemblyName System.Web
+      $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
+      $path = $decodedParams["path"]
+      $result = [MyClass]::OpenOrFocus($hwnd, $path)
+      $json = $result | ConvertTo-Json -Compress
+      $response.ContentType = "application/json; charset=utf-8"
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+      $response.ContentLength64 = $bytes.Length
+      $response.OutputStream.Write($bytes, 0, $bytes.Length)
     }
-    elseif (Test-Path $localPath) {
+    elseif (Test-Path -LiteralPath $localPath) {
       $content = [System.IO.File]::ReadAllBytes($localPath)
       $response.ContentLength64 = $content.Length
       $response.OutputStream.Write($content, 0, $content.Length)
