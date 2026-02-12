@@ -131,6 +131,17 @@ class MyClass {
     return $folderData
   }
 
+  static [int] StartProcessAndWaitForWindow([string]$Path) {
+    $p = Start-Process $Path -PassThru
+    $p.WaitForInputIdle() | Out-Null
+    $p.Refresh()
+    while ($p.MainWindowHandle -eq 0) {
+      Start-Sleep -Milliseconds 100
+      $p.Refresh()
+    }
+    return $p.MainWindowHandle
+  }
+
   static [object] OpenOrFocus([int]$hwnd, [string]$targetPath) {
     $WinAPI = "WinAPI" -as [type]
     if ($hwnd -gt 0 -and $WinApi::IsWindow($hwnd)) {
@@ -167,6 +178,14 @@ class MyClass {
           success = $true
           hwnd    = $excel.hWnd
         }
+      }
+    }
+    $ext = [System.IO.Path]::GetExtension($targetPath)
+    if ($ext -ne "") {
+      $hwnd = [MyClass]::StartProcessAndWaitForWindow($targetPath)
+      return @{
+        success = $true
+        hwnd    = $hwnd
       }
     }
     Invoke-Item -LiteralPath $targetPath
