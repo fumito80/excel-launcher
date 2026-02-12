@@ -224,7 +224,7 @@ try {
     }
     elseif ($path -eq "/activate") {
       $hwnd = 0
-      [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd)
+      [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd) | Out-Null
       $queryStringRaw = $request.RawUrl.Split("?")[1]
       Add-Type -AssemblyName System.Web
       $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
