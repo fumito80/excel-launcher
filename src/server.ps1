@@ -158,7 +158,8 @@ class MyClass {
     }
     $openFolders = [MyClass]::GetFolders()
     foreach ($folder in $openFolders) {
-      if ($folder.path -eq $targetPath) {
+      $folderPath = Join-Path -Path $folder.path -ChildPath $folder.name
+      if ($folderPath -eq $targetPath) {
         FocusWindow($folder.hWnd)
         return @{
           success = $true

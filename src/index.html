@@ -6,6 +6,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="index.js" defer></script>
     <style>
+        h3 {
+            &:has(.regexp-filter) {
+                display: grid;
+                grid-template-columns: max-content auto;
+
+                >div {
+                    display: block;
+                    justify-self: center;
+                }
+
+                .regexp-filter {
+                    border-radius: 1rem;
+                    padding: 0 10px;
+                    font-size: 1.1rem;
+                    line-height: 1.5rem;
+                    border-color: #CCCCCC;
+                    border-style: solid;
+                }
+            }
+        }
+
         .excels,
         .folders,
         .past {
@@ -15,14 +36,26 @@
             >* {
                 outline: 1px solid #999;
                 padding: 2px 8px;
+
+                &:hover::before {
+                    content: '';
+                    background-color: #efefef;
+                    position: absolute;
+                    z-index: -1;
+                    width: calc(100% - 16px);
+                    height: calc(1.5rem + 4px);
+                    left: 8px;
+                    margin-top: -3px;
+                }
+            }
+
+            a {
+                text-decoration: none;
             }
         }
 
         .excels,
-        .folders {
-            grid-template-columns: max-content auto max-content;
-        }
-
+        .folders,
         .past {
             grid-template-columns: max-content auto max-content max-content;
         }
@@ -35,13 +68,21 @@
             margin-top: 30px;
         }
 
-        .del-past {
+        .del-activate {
             cursor: pointer;
+            color: #999999;
 
             &:hover {
-                font-weight: bold;
                 color: white;
                 background-color: red;
+            }
+        }
+
+        .unfiltered-caption:has(+.unfiltered:not(:empty)) {
+            margin-top: 10px;
+
+            &::before {
+                content: 'フィルタ対象外';
             }
         }
     </style>
@@ -49,8 +90,13 @@
 </head>
 
 <body>
-    <h3>Excel</h3>
-    <div class="excels parent"></div>
+    <h3>Excel<div>
+            <div><input type="search" class="regexp-filter" placeholder="フィルタ" autocomplete="on" name="filter"></div>
+        </div>
+    </h3>
+    <div class="excels parent filtered"></div>
+    <div class="unfiltered-caption"></div>
+    <div class="excels parent unfiltered"></div>
     <h3>Folder</h3>
     <div class="folders parent"></div>
     <hr class="past-separator">

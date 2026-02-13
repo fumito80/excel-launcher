@@ -1,8 +1,32 @@
 const uriBase = "http://localhost:8080";
 
-const [$excels] = document.getElementsByClassName("excels");
+const [$excels, $unfiltered] = document.getElementsByClassName("excels");
 const [$folders] = document.getElementsByClassName("folders");
 const [$past] = document.getElementsByClassName("past");
+const [$filter] = document.getElementsByClassName("regexp-filter");
+
+function filter() {
+  const { length } = getComputedStyle($excels).gridTemplateColumns.split(" ");
+  const cols = Array.from({ length });
+  return (e) => {
+    const { value } = e.target;
+    if (!value) {
+      $excels.append(...$unfiltered.children);
+      sort($excels);
+      localStorage.setItem("filter", "");
+      return;
+    }
+    const $all = Array.from($excels.children).concat(...$unfiltered.children);
+    Array.from({ length: $all.length / length }).forEach((_, i) => {
+      const $excel = $all[i * length];
+      const $parent = $excel.textContent.toUpperCase().includes(value.toUpperCase()) ? $excels : $unfiltered;
+      $parent.append(...cols.map((_, j) => $all[i * length + j]));
+    });
+    sort($excels);
+    sort($unfiltered);
+    localStorage.setItem("filter", value);
+  }
+}
 
 function createElement(tagName, { ...props } = {}) {
   return Object.assign(document.createElement(tagName), { ...props });
@@ -44,7 +68,7 @@ function makeItemRow($parent, activates) {
       className: "activate",
     });
     $activate.setAttribute("data-dt", dtSerial);
-    $parent.append($name, $path, $activate);
+    $parent.append($name, $path, $activate, createElement("a", { textContent: "×", className: "del-activate" }));
   };
 }
 
@@ -78,6 +102,13 @@ function setList(responseJson = {}) {
   return { activates, responseJson };
 }
 
+function setFilter({ activates, responseJson }) {
+  const filter = localStorage.getItem("filter");
+  $filter.value = filter;
+  $filter.dispatchEvent(new Event("input"));
+  return { activates, responseJson };
+}
+
 function setPast({ activates, responseJson }) {
   Object.keys(activates)
     .filter(
@@ -91,10 +122,7 @@ function setPast({ activates, responseJson }) {
       const [, path, name] = /^(.*)\\(.*)$/.exec(targetPath);
       return { name, path };
     })
-    .forEach((item) => {
-      makeItemRow($past, activates)(item);
-      $past.append(createElement("a", { textContent: "×", className: "del-past" }));
-    });
+    .forEach(makeItemRow($past, activates));
   sort($past);
 }
 
@@ -102,15 +130,21 @@ function clickItem($target) {
   if (!($target instanceof HTMLAnchorElement)) {
     return;
   }
-  if ($target.classList.contains("del-past")) {
+  if ($target.classList.contains("del-activate")) {
     const cols = getComputedStyle($past).gridTemplateColumns.split(" ").length;
     const [$head, ...$rest] = Array.from({ length: cols - 1 }).reduce(([$prev, ...rest]) => [$prev.previousElementSibling, $prev, ...rest], [$target]);
     const fullPath = $head.dataset.path;
     const { [fullPath]: _, ...activates } = JSON.parse(localStorage.getItem("activates") || "{}");
     localStorage.setItem("activates", JSON.stringify({ ...activates }));
-    [$head, ...$rest].forEach(($el) => {
-      $el.remove();
-    });
+    if ($target.closest(".past")) {
+      [$head, ...$rest].forEach(($el) => {
+        $el.remove();
+      });
+      return;
+    }
+    $target.previousElementSibling.removeAttribute("data-dt");
+    $target.previousElementSibling.textContent = "";
+    sort($target.closest(".parent"));
     return;
   }
   const isPastItem = $target.closest(".past");
@@ -160,6 +194,9 @@ fetch(`${uriBase}/list`)
     return res.json();
   })
   .then(setList)
+  .then(setFilter)
   .then(setPast);
 
 document.addEventListener("click", (e) => clickItem(e.target));
+
+$filter.addEventListener("input", filter());
