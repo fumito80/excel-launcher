@@ -43,6 +43,17 @@ function FocusWindow {
   [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
 }
 
+function SetOutputJson {
+  param (
+    $response, $result
+  )
+  $json = ConvertTo-Json $result -Compress
+  $response.ContentType = "application/json; charset=utf-8"
+  $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+  $response.ContentLength64 = $bytes.Length
+  $response.OutputStream.Write($bytes, 0, $bytes.Length)
+}
+
 class MyClass {
 
   static [object] GetExcels() {
@@ -159,7 +170,6 @@ class MyClass {
     $openFolders = [MyClass]::GetFolders()
     foreach ($folder in $openFolders) {
       $folderPath = Join-Path -Path $folder.path -ChildPath $folder.name
-      Write-Host $folderPath
       if ($folderPath -eq $targetPath) {
         FocusWindow($folder.hWnd)
         return @{
@@ -194,14 +204,6 @@ class MyClass {
     return @{
       success = $true
     }
-  }
-
-  static [void] OutputJson($response, $result) {
-    $json = $result | ConvertTo-Json -Compress
-    $response.ContentType = "application/json; charset=utf-8"
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-    $response.ContentLength64 = $bytes.Length
-    $response.OutputStream.Write($bytes, 0, $bytes.Length)
   }
 }
 
@@ -245,7 +247,7 @@ try {
           excels  = $excelData
           folders = $folderData
         }
-        [MyClass]::OutputJson($response, $result)
+        SetOutputJson $response $result
       }
 
       "/activate" {
@@ -256,7 +258,7 @@ try {
         $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
         $path = $decodedParams["path"]
         $result = [MyClass]::OpenOrFocus($hwnd, $path)
-        [MyClass]::OutputJson($response, $result)
+        SetOutputJson $response $result
       }
 
       default {
