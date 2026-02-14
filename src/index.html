@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
@@ -7,7 +7,10 @@
     <script src="index.js" defer></script>
     <style>
         h3 {
-            &:has(.regexp-filter) {
+            margin-bottom: 10px;
+            color: #222222;
+
+            &:has(.filter) {
                 display: grid;
                 grid-template-columns: max-content auto;
 
@@ -16,13 +19,21 @@
                     justify-self: center;
                 }
 
-                .regexp-filter {
+                .filter {
                     border-radius: 1rem;
-                    padding: 0 10px;
+                    padding: 0 12px;
                     font-size: 1.1rem;
                     line-height: 1.5rem;
                     border-color: #CCCCCC;
                     border-style: solid;
+                }
+
+                input::-webkit-calendar-picker-indicator {
+                    display: none !important;
+                }
+
+                input::-webkit-search-cancel-button {
+                    margin-right: -4px;
                 }
             }
         }
@@ -32,20 +43,30 @@
         .past {
             display: grid;
             gap: 1px;
+            border-radius: 5px;
+            border: 1px solid #222222;
+            padding: 4px;
 
             >* {
-                outline: 1px solid #999;
+                border-bottom: 1px solid #999999;
                 padding: 2px 8px;
 
-                &:hover::before {
+                &:hover::after {
                     content: '';
-                    background-color: #efefef;
+                    background-color: #D2E4FF;
                     position: absolute;
                     z-index: -1;
                     width: calc(100% - 16px);
                     height: calc(1.5rem + 4px);
                     left: 8px;
                     margin-top: -3px;
+                }
+
+                &:last-child,
+                &:has(+:last-child),
+                &:has(+*+:last-child),
+                &:has(+*+*+:last-child) {
+                    border: none;
                 }
             }
 
@@ -61,7 +82,7 @@
         }
 
         .activate {
-            text-align: center;
+            text-align: right;
         }
 
         .past-separator {
@@ -78,20 +99,29 @@
             }
         }
 
+        .unfiltered:empty {
+            border: none;
+        }
+
         .unfiltered-caption:has(+.unfiltered:not(:empty)) {
             margin-top: 10px;
+            text-align: center;
+            font-weight: 300;
 
             &::before {
-                content: 'フィルタ対象外';
+                content: 'Filtered-out';
             }
         }
     </style>
-    <title>Excel Switcher</title>
+    <title>Excel & Folders</title>
 </head>
 
 <body>
     <h3>Excel<div>
-            <div><input type="search" class="regexp-filter" placeholder="フィルタ" autocomplete="on" name="filter"></div>
+            <div>
+                <form action="about:blank" target="hidden_target"><input type="search" class="filter"
+                        placeholder="Filter" name="filter" autocomplete="on"></form>
+            </div>
         </div>
     </h3>
     <div class="excels parent filtered"></div>
@@ -102,6 +132,7 @@
     <hr class="past-separator">
     <h3>[Recently Opened]</h3>
     <div class="past"></div>
+    <iframe name="hidden_target" style="display:none;"></iframe>
 </body>
 
 </html>

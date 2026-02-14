@@ -116,7 +116,7 @@ class MyClass {
           try {
             $path = ([uri]$window.LocationURL).LocalPath
             $folderData += @{
-              name = $window.LocationName
+              name = Split-Path -Path $path -Leaf
               path = Split-Path -Path $path -Parent
               hwnd = $window.Hwnd
             }
@@ -159,6 +159,7 @@ class MyClass {
     $openFolders = [MyClass]::GetFolders()
     foreach ($folder in $openFolders) {
       $folderPath = Join-Path -Path $folder.path -ChildPath $folder.name
+      Write-Host $folderPath
       if ($folderPath -eq $targetPath) {
         FocusWindow($folder.hWnd)
         return @{
@@ -234,32 +235,39 @@ try {
     }
 
     $path = $request.Url.LocalPath
-    if ($path -eq "/") { $path = "/index.html" }
-    $localPath = Join-Path (Get-Location) $path
 
-    if ($path -eq "/list") {
-      $excelData = [MyClass]::GetExcels()
-      $folderData = [MyClass]::GetFolders()
-      $result = @{
-        excels  = $excelData
-        folders = $folderData
+    switch ($path) {
+
+      "/list" {
+        $excelData = [MyClass]::GetExcels()
+        $folderData = [MyClass]::GetFolders()
+        $result = @{
+          excels  = $excelData
+          folders = $folderData
+        }
+        [MyClass]::OutputJson($response, $result)
       }
-      [MyClass]::OutputJson($response, $result)
-    }
-    elseif ($path -eq "/activate") {
-      $hwnd = 0
-      [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd) | Out-Null
-      $queryStringRaw = $request.RawUrl.Split("?")[1]
-      Add-Type -AssemblyName System.Web
-      $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
-      $path = $decodedParams["path"]
-      $result = [MyClass]::OpenOrFocus($hwnd, $path)
-      [MyClass]::OutputJson($response, $result)
-    }
-    elseif (Test-Path -LiteralPath $localPath) {
-      $content = [System.IO.File]::ReadAllBytes($localPath)
-      $response.ContentLength64 = $content.Length
-      $response.OutputStream.Write($content, 0, $content.Length)
+
+      "/activate" {
+        $hwnd = 0
+        [int]::TryParse($request.QueryString["hwnd"], [ref]$hwnd) | Out-Null
+        $queryStringRaw = $request.RawUrl.Split("?")[1]
+        Add-Type -AssemblyName System.Web
+        $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
+        $path = $decodedParams["path"]
+        $result = [MyClass]::OpenOrFocus($hwnd, $path)
+        [MyClass]::OutputJson($response, $result)
+      }
+
+      default {
+        if ($path -eq "/") { $path = "/index.html" }
+        $localPath = Join-Path (Get-Location) $path
+        if (Test-Path -LiteralPath $localPath) {
+          $content = [System.IO.File]::ReadAllBytes($localPath)
+          $response.ContentLength64 = $content.Length
+          $response.OutputStream.Write($content, 0, $content.Length)
+        }
+      }
     }
     $response.Close()
   }

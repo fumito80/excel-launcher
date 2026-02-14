@@ -3,7 +3,7 @@ const uriBase = "http://localhost:8080";
 const [$excels, $unfiltered] = document.getElementsByClassName("excels");
 const [$folders] = document.getElementsByClassName("folders");
 const [$past] = document.getElementsByClassName("past");
-const [$filter] = document.getElementsByClassName("regexp-filter");
+const [$filter] = document.getElementsByClassName("filter");
 
 function filter() {
   const { length } = getComputedStyle($excels).gridTemplateColumns.split(" ");
@@ -32,6 +32,11 @@ function createElement(tagName, { ...props } = {}) {
   return Object.assign(document.createElement(tagName), { ...props });
 }
 
+function setActivate(fullpath, dt = "", activatesIn = undefined) {
+  const activates = activatesIn ?? JSON.parse(localStorage.getItem("activates") || "{}");
+  localStorage.setItem("activates", JSON.stringify({ ...activates, [fullpath]: dt }));
+}
+
 function makeItemRow($parent, activates) {
   return (item) => {
     const $name = createElement("a", {
@@ -40,10 +45,10 @@ function makeItemRow($parent, activates) {
       className: "fullpath",
     });
     $name.setAttribute("data-hwnd", item.hwnd);
-    const fullPath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
-    $name.setAttribute("data-path", fullPath);
+    const fullpath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
+    $name.setAttribute("data-path", fullpath);
     const [, path, parentFolder] = /^(.*\\)(.*)$/.exec(item.path) ?? ["", ""];
-    const $path = createElement("div", { textContent: path });
+    const $path = createElement("div", { textContent: path, className: "path" });
     const $parentFolder = createElement("a", {
       textContent: parentFolder,
       href: "javascript:void(0)",
@@ -51,7 +56,7 @@ function makeItemRow($parent, activates) {
     });
     $parentFolder.setAttribute("data-path", item.path);
     $path.append($parentFolder);
-    const dtSerial = activates[fullPath] ?? "";
+    const dtSerial = activates[fullpath] ?? "";
     let textContent = "";
     let title = "";
     if (dtSerial) {
@@ -69,6 +74,7 @@ function makeItemRow($parent, activates) {
     });
     $activate.setAttribute("data-dt", dtSerial);
     $parent.append($name, $path, $activate, createElement("a", { textContent: "×", className: "del-activate" }));
+    return { fullpath, dtSerial };
   };
 }
 
@@ -95,10 +101,14 @@ function sort($parent) {
 
 function setList(responseJson = {}) {
   const activates = JSON.parse(localStorage.getItem("activates") || "{}");
-  responseJson.excels?.forEach(makeItemRow($excels, activates));
+  const excels = responseJson.excels?.map(makeItemRow($excels, activates));
   sort($excels);
-  responseJson.folders?.forEach(makeItemRow($folders, activates));
+  const folders = responseJson.folders?.map(makeItemRow($folders, activates));
   sort($folders);
+  const newItems = excels.concat(folders)
+    .filter(({ dtSerial }) => !(Boolean(dtSerial)))
+    .reduce((acc, el) => Object.assign(acc, { [el.fullpath]: "" }), {});
+  localStorage.setItem("activates", JSON.stringify({ ...activates, ...newItems }));
   return { activates, responseJson };
 }
 
@@ -106,6 +116,9 @@ function setFilter({ activates, responseJson }) {
   const filter = localStorage.getItem("filter");
   $filter.value = filter;
   $filter.dispatchEvent(new Event("input"));
+  if (filter) {
+    document.forms[0].requestSubmit();
+  }
   return { activates, responseJson };
 }
 
@@ -114,8 +127,8 @@ function setPast({ activates, responseJson }) {
     .filter(
       (targetPath) =>
         !responseJson.excels.concat(responseJson.folders).find((item) => {
-          const fullPath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
-          return fullPath === targetPath;
+          const fullpath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
+          return fullpath === targetPath;
         }),
     )
     .map((targetPath) => {
@@ -133,15 +146,16 @@ function clickItem($target) {
   if ($target.classList.contains("del-activate")) {
     const cols = getComputedStyle($past).gridTemplateColumns.split(" ").length;
     const [$head, ...$rest] = Array.from({ length: cols - 1 }).reduce(([$prev, ...rest]) => [$prev.previousElementSibling, $prev, ...rest], [$target]);
-    const fullPath = $head.dataset.path;
-    const { [fullPath]: _, ...activates } = JSON.parse(localStorage.getItem("activates") || "{}");
-    localStorage.setItem("activates", JSON.stringify({ ...activates }));
+    const fullpath = $head.dataset.path;
+    const { [fullpath]: _, ...activates } = JSON.parse(localStorage.getItem("activates") || "{}");
     if ($target.closest(".past")) {
+      localStorage.setItem("activates", JSON.stringify({ ...activates }));
       [$head, ...$rest].forEach(($el) => {
         $el.remove();
       });
       return;
     }
+    setActivate(fullpath, "", activates);
     $target.previousElementSibling.removeAttribute("data-dt");
     $target.previousElementSibling.textContent = "";
     sort($target.closest(".parent"));
@@ -160,30 +174,35 @@ function clickItem($target) {
     })
     .then((json) => {
       if (!json.success) {
-        alert("Path or File Not Found");
+        alert(`Path or File Not Found: ${path}`);
         return;
       }
-      if (isFullpath) {
-        const hwnd = json?.hwnd;
-        $target.setAttribute("data-hwnd", hwnd ?? "");
-        const activates = JSON.parse(localStorage.getItem("activates") || "{}");
-        const dt = Date.now();
-        localStorage.setItem(
-          "activates",
-          JSON.stringify({ ...activates, [$target.dataset.path]: dt }),
-        );
-        if (isPastItem) {
+      if (!isFullpath) {
+        if (!json.hwnd) {
           document.location.reload();
-          return;
         }
-        const $activate = $target.nextElementSibling.nextElementSibling;
-        $activate.setAttribute("data-dt", dt);
-        $activate.textContent = new Date(dt).toLocaleTimeString();
-        $activate.title = new Date(dt).toLocaleString();
-        sort($target.closest(".parent"));
+        return;
       }
+      const hwnd = json.hwnd;
+      $target.setAttribute("data-hwnd", hwnd ?? "");
+      const dt = Date.now();
+      setActivate($target.dataset.path, dt);
+      if (isPastItem) {
+        document.location.reload();
+        return;
+      }
+      const $activate = $target.nextElementSibling.nextElementSibling;
+      $activate.setAttribute("data-dt", dt);
+      $activate.textContent = new Date(dt).toLocaleTimeString();
+      $activate.title = new Date(dt).toLocaleString();
+      sort($target.closest(".parent"));
+
     })
     .catch(() => { });
+  const filter = localStorage.getItem("filter");
+  if (filter) {
+    document.forms[0].requestSubmit();
+  }
 }
 
 fetch(`${uriBase}/list`)
