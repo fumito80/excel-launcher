@@ -256,13 +256,15 @@ try {
         $queryStringRaw = $request.RawUrl.Split("?")[1]
         Add-Type -AssemblyName System.Web
         $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
-        $path = $decodedParams["path"]
-        $result = [MyClass]::OpenOrFocus($hwnd, $path)
+        $filepath = $decodedParams["path"]
+        $result = [MyClass]::OpenOrFocus($hwnd, $filepath)
         SetOutputJson $response $result
       }
 
       default {
-        if ($path -eq "/") { $path = "/index.html" }
+        if ($path -eq "/") {
+          $path = "/index.html"
+        }
         $localPath = Join-Path (Get-Location) $path
         if (Test-Path -LiteralPath $localPath) {
           $content = [System.IO.File]::ReadAllBytes($localPath)
