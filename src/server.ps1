@@ -33,7 +33,7 @@ public class WinAPI {
 }
 "@
 
-function FocusWindow {
+function Set-FocusWindow {
   param (
     $hwnd
   )  
@@ -43,7 +43,7 @@ function FocusWindow {
   [WinAPI]::ShowWindow($hwnd, 5) | Out-Null # SW_SHOW
 }
 
-function SetOutputJson {
+function Set-OutputJson {
   param (
     $response, $result
   )
@@ -53,6 +53,9 @@ function SetOutputJson {
   $response.ContentLength64 = $bytes.Length
   $response.OutputStream.Write($bytes, 0, $bytes.Length)
 }
+
+# Excel 拡張子一覧
+$excelExt = ".xlsx", ".xlsm", ".xlsb", ".xls"
 
 class MyClass {
 
@@ -116,6 +119,50 @@ class MyClass {
     return $excelData
   }
 
+  static [object] GetFolderTree([string]$Path, [int]$Depth) {
+
+    if ($Depth -gt 3) {
+      return $null
+    }
+
+    $item = Get-Item $Path
+
+    if (-not $item.PSIsContainer) {
+      if ($item.Name) {
+        return @{
+          name     = $item.Name
+          fullName = $item.FullName
+          type     = "Excel"
+        }
+      }
+      return $null
+    }
+
+    $children = @()
+
+    $targetChildren = Get-ChildItem $item.FullName | Where-Object {
+      $_.PSIsContainer -or $_.Extension -in $excelExt
+    }
+
+    foreach ($child in $targetChildren) {
+      $node = [MyClass]::GetFolderTree($child.FullName, $Depth + 1)
+      if ($null -ne $node) {
+        $children += $node
+      }
+    }
+
+    if ($children.Count -eq 0) {
+      return $null
+    }
+
+    return @{
+      name     = $item.Name
+      fullName = $item.FullName
+      type     = "Folder"
+      children = $children
+    }
+  }
+
   static [object] GetFolders() {
     # 2. Get Open Folders (Explorer)
     $folderData = @()
@@ -130,6 +177,7 @@ class MyClass {
               name = Split-Path -Path $path -Leaf
               path = Split-Path -Path $path -Parent
               hwnd = $window.Hwnd
+              # children = [MyClass]::GetFolderTree($path, 0)
             }
           }
           catch {}
@@ -156,7 +204,7 @@ class MyClass {
   static [object] OpenOrFocus([int]$hwnd, [string]$targetPath) {
     $WinAPI = "WinAPI" -as [type]
     if ($hwnd -gt 0 -and $WinApi::IsWindow($hwnd)) {
-      FocusWindow($hwnd)
+      Set-FocusWindow $hwnd
       return @{
         success = $true
         hwnd    = $hwnd
@@ -171,7 +219,7 @@ class MyClass {
     foreach ($folder in $openFolders) {
       $folderPath = Join-Path -Path $folder.path -ChildPath $folder.name
       if ($folderPath -eq $targetPath) {
-        FocusWindow($folder.hWnd)
+        Set-FocusWindow $folder.hWnd
         return @{
           success = $true
           hwnd    = $folder.hWnd
@@ -185,7 +233,7 @@ class MyClass {
       }
       $excelPath = Join-Path -Path $excel.path -ChildPath $excel.name
       if ($excelPath -eq $targetPath) {
-        FocusWindow($excel.hWnd)
+        Set-FocusWindow $excel.hWnd
         return @{
           success = $true
           hwnd    = $excel.hWnd
@@ -247,7 +295,7 @@ try {
           excels  = $excelData
           folders = $folderData
         }
-        SetOutputJson $response $result
+        Set-OutputJson $response $result
       }
 
       "/activate" {
@@ -258,7 +306,7 @@ try {
         $decodedParams = [System.Web.HttpUtility]::ParseQueryString($queryStringRaw, [System.Text.Encoding]::UTF8)
         $filepath = $decodedParams["path"]
         $result = [MyClass]::OpenOrFocus($hwnd, $filepath)
-        SetOutputJson $response $result
+        Set-OutputJson $response $result
       }
 
       default {

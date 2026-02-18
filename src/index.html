@@ -41,61 +41,61 @@
         .excels,
         .folders,
         .past {
-            display: grid;
-            gap: 1px;
+            display: block;
+            width: 100%;
             border-radius: 5px;
             border: 1px solid #222222;
             padding: 4px;
+            border-collapse: collapse;
 
-            >* {
-                border-bottom: 1px solid #999999;
-                padding: 2px 8px;
+            tr {
+                border-bottom: 1px solid #CCCCCC;
 
-                &:hover::after {
-                    content: '';
-                    background-color: #D2E4FF;
-                    position: absolute;
-                    z-index: -1;
-                    width: calc(100% - 16px);
-                    height: calc(1.5rem + 4px);
-                    left: 8px;
-                    margin-top: -3px;
+                &:last-child {
+                    border: none;
                 }
 
-                &:last-child,
-                &:has(+:last-child),
-                &:has(+*+:last-child),
-                &:has(+*+*+:last-child) {
-                    border: none;
+                &:hover {
+                    outline: 2px solid #1DA1F2;
+                    border-radius: 4px;
+                }
+            }
+
+            td {
+                padding: 2px 8px;
+
+                &:first-child {
+                    white-space: nowrap;
+                }
+
+                &.path {
+                    width: 100%;
                 }
             }
 
             a {
                 text-decoration: none;
             }
-        }
 
-        .excels,
-        .folders,
-        .past {
-            grid-template-columns: max-content auto max-content max-content;
-        }
+            .activate {
+                text-align: right;
+            }
 
-        .activate {
-            text-align: right;
-        }
+            .past-separator {
+                margin-top: 30px;
+            }
 
-        .past-separator {
-            margin-top: 30px;
-        }
+            .del-activate {
+                display: flex;
+                text-align: center;
+                padding: 2px 4px;
+                cursor: pointer;
+                color: #999999;
 
-        .del-activate {
-            cursor: pointer;
-            color: #999999;
-
-            &:hover {
-                color: white;
-                background-color: red;
+                &:hover {
+                    color: white;
+                    background-color: red;
+                }
             }
         }
 
@@ -105,12 +105,20 @@
 
         .unfiltered-caption:has(+.unfiltered:not(:empty)) {
             margin-top: 10px;
-            text-align: center;
             font-weight: 300;
 
             &::before {
                 content: 'Filtered-out';
             }
+        }
+
+        .excels.filtered,
+        .excels.unfiltered:not(:empty) {
+            background-color: #DAF2D0;
+        }
+
+        .folders {
+            background-color: #FFFFCC;
         }
     </style>
     <title>Excel & Folders</title>
@@ -124,14 +132,14 @@
             </div>
         </div>
     </h3>
-    <div class="excels parent filtered"></div>
+    <table class="excels parent filtered"></table>
     <div class="unfiltered-caption"></div>
-    <div class="excels parent unfiltered"></div>
+    <table class="excels parent unfiltered"></table>
     <h3>Folder</h3>
-    <div class="folders parent"></div>
+    <table class="folders parent"></table>
     <hr class="past-separator">
     <h3>[Recently Opened]</h3>
-    <div class="past"></div>
+    <table class="past"></table>
     <iframe name="hidden_target" style="display:none;"></iframe>
 </body>
 

@@ -5,31 +5,32 @@ const [$folders] = document.getElementsByClassName("folders");
 const [$past] = document.getElementsByClassName("past");
 const [$filter] = document.getElementsByClassName("filter");
 
-function filter() {
-  const { length } = getComputedStyle($excels).gridTemplateColumns.split(" ");
-  const cols = Array.from({ length });
-  return (e) => {
-    const { value } = e.target;
-    if (!value) {
-      $excels.append(...$unfiltered.children);
-      sort($excels);
-      localStorage.setItem("filter", "");
-      return;
-    }
-    const $all = Array.from($excels.children).concat(...$unfiltered.children);
-    Array.from({ length: $all.length / length }).forEach((_, i) => {
-      const $excel = $all[i * length];
-      const $parent = $excel.textContent.toUpperCase().includes(value.toUpperCase()) ? $excels : $unfiltered;
-      $parent.append(...cols.map((_, j) => $all[i * length + j]));
-    });
+function filter(e) {
+  const { value } = e.target;
+  if (!value) {
+    $excels.append(...$unfiltered.children);
     sort($excels);
-    sort($unfiltered);
-    localStorage.setItem("filter", value);
+    localStorage.setItem("filter", "");
+    return;
   }
+  const $allRows = Array.from($excels.children).concat(...$unfiltered.children);
+  $allRows.forEach(($row) => {
+    const $parent = $row.firstElementChild.textContent.toUpperCase().includes(value.toUpperCase()) ? $excels : $unfiltered;
+    $parent.append($row);
+  });
+  sort($excels);
+  sort($unfiltered);
+  localStorage.setItem("filter", value);
 }
+
 
 function createElement(tagName, { ...props } = {}) {
   return Object.assign(document.createElement(tagName), { ...props });
+}
+
+function addChildren($parent, ...$children) {
+  $parent.append(...$children);
+  return $parent;
 }
 
 function setActivate(fullpath, dt = "", activatesIn = undefined) {
@@ -39,23 +40,23 @@ function setActivate(fullpath, dt = "", activatesIn = undefined) {
 
 function makeItemRow($parent, activates) {
   return (item) => {
-    const $name = createElement("a", {
+    const $nameLink = createElement("a", {
       href: "javascript:void(0)",
       textContent: item.name,
       className: "fullpath",
     });
-    $name.setAttribute("data-hwnd", item.hwnd);
     const fullpath = `${item.path.replace("\\\\", "\\")}\\${item.name}`;
-    $name.setAttribute("data-path", fullpath);
+    $nameLink.setAttribute("data-hwnd", item.hwnd);
+    $nameLink.setAttribute("data-path", fullpath);
+    const $name = addChildren(createElement("td"), $nameLink);
     const [, path, parentFolder] = /^(.*\\)(.*)$/.exec(item.path) ?? ["", ""];
-    const $path = createElement("div", { textContent: path, className: "path" });
     const $parentFolder = createElement("a", {
       textContent: parentFolder,
       href: "javascript:void(0)",
       className: "parent-path",
     });
     $parentFolder.setAttribute("data-path", item.path);
-    $path.append($parentFolder);
+    const $path = addChildren(createElement("td", { textContent: path, className: "path" }), $parentFolder);
     const dtSerial = activates[fullpath] ?? "";
     let textContent = "";
     let title = "";
@@ -67,13 +68,16 @@ function makeItemRow($parent, activates) {
           : dt.toLocaleDateString();
       title = dt.toLocaleString();
     }
-    const $activate = createElement("div", {
+    const $activate = createElement("td", {
       textContent,
       title,
       className: "activate",
     });
     $activate.setAttribute("data-dt", dtSerial);
-    $parent.append($name, $path, $activate, createElement("a", { textContent: "×", className: "del-activate" }));
+    const $del = addChildren(createElement("td"), createElement("a", { textContent: "×", className: "del-activate" }));
+    const $row = createElement("tr");
+    $row.append($name, $path, $activate, $del);
+    $parent.append($row);
     return { fullpath, dtSerial };
   };
 }
@@ -83,10 +87,10 @@ function sort($parent) {
   if (!elements.length) {
     return;
   }
-  const { length } = getComputedStyle($parent).gridTemplateColumns.split(" ");
-  Array.from({ length: elements.length / length })
-    .map((_, i) => Array.from({ length }).map((_, j) => elements[i * length + j]))
-    .toSorted(([nameA, pathA, dtA], [nameB, pathB, dtB]) => {
+  Array.from($parent.children)
+    .toSorted((trA, trB) => {
+      const [nameA, pathA, dtA] = [...trA.children];
+      const [nameB, pathB, dtB] = [...trB.children];
       if (dtB.dataset.dt === dtA.dataset.dt) {
         return pathA.firstElementChild.dataset.path === pathB.firstElementChild.dataset.path
           ? nameA.textContent.localeCompare(nameB.textContent)
@@ -95,7 +99,7 @@ function sort($parent) {
       return (dtB.dataset.dt || 0) - (dtA.dataset.dt || 0);
     })
     .forEach((el) => {
-      $parent.append(...el);
+      $parent.append(el);
     });
 }
 
@@ -106,7 +110,7 @@ function setList(responseJson = {}) {
   const folders = responseJson.folders?.map(makeItemRow($folders, activates));
   sort($folders);
   const newItems = excels.concat(folders)
-    .filter(({ dtSerial }) => !(Boolean(dtSerial)))
+    .filter(({ dtSerial }) => !dtSerial)
     .reduce((acc, el) => Object.assign(acc, { [el.fullpath]: "" }), {});
   localStorage.setItem("activates", JSON.stringify({ ...activates, ...newItems }));
   return { activates, responseJson };
@@ -143,21 +147,20 @@ function clickItem($target) {
   if (!($target instanceof HTMLAnchorElement)) {
     return;
   }
+  const $parent = $target.closest("tr");
   if ($target.classList.contains("del-activate")) {
-    const cols = getComputedStyle($past).gridTemplateColumns.split(" ").length;
-    const [$head, ...$rest] = Array.from({ length: cols - 1 }).reduce(([$prev, ...rest]) => [$prev.previousElementSibling, $prev, ...rest], [$target]);
-    const fullpath = $head.dataset.path;
+    const [$name] = $parent.getElementsByClassName("fullpath");
+    const fullpath = $name.dataset.path;
     const { [fullpath]: _, ...activates } = JSON.parse(localStorage.getItem("activates") || "{}");
     if ($target.closest(".past")) {
       localStorage.setItem("activates", JSON.stringify({ ...activates }));
-      [$head, ...$rest].forEach(($el) => {
-        $el.remove();
-      });
+      $parent.remove();
       return;
     }
     setActivate(fullpath, "", activates);
-    $target.previousElementSibling.removeAttribute("data-dt");
-    $target.previousElementSibling.textContent = "";
+    const [$activate] = $parent.getElementsByClassName("activate");
+    $activate.removeAttribute("data-dt");
+    $activate.textContent = "";
     sort($target.closest(".parent"));
     return;
   }
@@ -191,7 +194,7 @@ function clickItem($target) {
         document.location.reload();
         return;
       }
-      const $activate = $target.nextElementSibling.nextElementSibling;
+      const [$activate] = $parent.getElementsByClassName("activate");
       $activate.setAttribute("data-dt", dt);
       $activate.textContent = new Date(dt).toLocaleTimeString();
       $activate.title = new Date(dt).toLocaleString();
@@ -218,4 +221,4 @@ fetch(`${uriBase}/list`)
 
 document.addEventListener("click", (e) => clickItem(e.target));
 
-$filter.addEventListener("input", filter());
+$filter.addEventListener("input", filter);
